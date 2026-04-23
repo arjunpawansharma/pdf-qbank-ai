@@ -34,7 +34,7 @@ if uploaded_file:
     
     if not st.session_state.layout_detected:
         if st.button("🤖 Auto-Detect Sections (Multi-Chapter Mode)"):
-            with st.spinner("Reading the Table of Contents to map chapters..."):
+            with st.spinner("Reading the Table of Contents..."):
                 toc_text = "".join([doc[i].get_text() for i in range(min(15, len(doc)))])
                 
                 toc_prompt = f"""
@@ -78,14 +78,88 @@ if uploaded_file:
     st.markdown("### 2. Build the Exam")
     if st.button("Scan PDF & Build Exam", type="primary"):
         st.toast("🚀 Starting scan... this will take 3-5 minutes.")
-        st.warning("⏳ AI is processing. Please stay on this page and do not refresh.")
         
         progress_bar = st.progress(0)
-        status_text = st.empty()
+        status_text = st.empty() # This is the placeholder for the page numbers
         
-        # Memorize the Answer Key
-        status_text.text("📖 Memorizing Answer Keys...")
+        status_text.info("📖 Step 1: Memorizing Answer Keys... please wait.")
         answer_key_text = "".join([doc[i].get_text() for i in range(a_start - 1, a_end)])
         
         all_questions = []
-        chunk_size = 5 # Slightly larger for speed
+        chunk_size = 5 
+        
+        for i in range(q_start - 1, q_end, chunk_size):
+            chunk_end = min(i + chunk_size, q_end)
+            
+            # This line will now update on your screen every few seconds
+            status_text.warning(f"🔍 Currently scanning pages {i + 1} to {chunk_end} of {q_end}...")
+            
+            question_text = "".join([doc[page_num].get_text() for page_num in range(i, chunk_end)])
+            
+            prompt = f"""
+            Extract all MCQs from the Questions Chunk. Use the Answer Key reference to find the official explanation.
+            Return a JSON object with a 'questions' list. Each item needs:
+            "subject", "fact_pattern", "question", "options", "correct_answer", "correct_explanation", "wrong_explanations".
+            
+            Questions chunk: {question_text}
+            Answer Key reference: {answer_key_text}
+            """
+            
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={ "type": "json_object" }
+                )
+                extracted = json.loads(response.choices[0].message.content).get('questions', [])
+                all_questions.extend(extracted)
+            except Exception as e:
+                st.error(f"Error on pages {i+1}: {e}")
+            
+            progress_bar.progress(min(1.0, (chunk_end / q_end)))
+        
+        status_text.success("✅ Scanning complete! Finalizing your randomized exam...")
+        
+        # Filtering for the subjects you need
+        contracts_qs = [q for q in all_questions if q.get('subject') == 'Contracts']
+        crim_law_qs = [q for q in all_questions if q.get('subject') == 'Criminal Law']
+        torts_qs = [q for q in all_questions if q.get('subject') == 'Torts']
+        
+        temp_exam = []
+        temp_exam.extend(random.sample(contracts_qs, min(33, len(contracts_qs))))
+        temp_exam.extend(random.sample(crim_law_qs, min(33, len(crim_law_qs))))
+        temp_exam.extend(random.sample(torts_qs, min(34, len(torts_qs))))
+        
+        random.shuffle(temp_exam)
+        st.session_state.exam_questions = temp_exam
+        st.session_state.exam_submitted = False
+        st.rerun()
+
+# --- Display logic for the finished exam ---
+if st.session_state.exam_questions:
+    st.success(f"🎉 Exam ready! {len(st.session_state.exam_questions)} questions found.")
+    for i, q in enumerate(st.session_state.exam_questions):
+        st.divider()
+        st.subheader(f"Question {i+1} ({q.get('subject')})") 
+        if q.get('fact_pattern'):
+            st.markdown(f"_{q.get('fact_pattern')}_")
+        st.markdown(f"**{q.get('question')}**")
+        user_choice = st.radio("Select answer:", q.get('options', []), key=f"radio_{i}", label_visibility="collapsed", disabled=st.session_state.exam_submitted)
+        
+        if st.session_state.exam_submitted:
+            if user_choice == q.get('correct_answer'):
+                st.success(f"✅ Correct! {q.get('correct_explanation')}")
+            else:
+                st.error(f"❌ Incorrect. You chose: {user_choice}")
+                st.success(f"✅ Correct Answer: {q.get('correct_answer')}")
+                st.warning(f"**Official Explanation:** {q.get('wrong_explanations')}")
+
+    st.divider()
+    if not st.session_state.exam_submitted:
+        if st.button("Submit Exam & View Explanations", type="primary"):
+            st.session_state.exam_submitted = True
+            st.rerun()
+    else:
+        if st.button("Retake This Exam"):
+            st.session_state.exam_submitted = False
+            st.rerun()
