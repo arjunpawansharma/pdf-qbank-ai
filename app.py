@@ -10,6 +10,10 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.title("⚖️ Autonomous Bar Exam Builder")
 st.write("Upload your MBE PDF. The AI will scan the entire document, identify the subjects, and build your custom exam.")
 
+# --- NEW: Initialize the App's "Memory" ---
+if "exam_questions" not in st.session_state:
+    st.session_state.exam_questions = None
+
 uploaded_file = st.file_uploader("Upload your MBE PDF", type="pdf")
 
 if uploaded_file:
@@ -23,7 +27,7 @@ if uploaded_file:
         status_text = st.empty()
         
         all_questions = []
-        chunk_size = 15 # Reads 15 pages at a time to prevent AI limits
+        chunk_size = 15 
         
         # 1. The Auto-Scanner Loop
         for i in range(0, len(doc), chunk_size):
@@ -33,7 +37,6 @@ if uploaded_file:
             
             text = "".join([doc[page_num].get_text() for page_num in range(start_page, end_page)])
             
-            # --- UPDATED PROMPT: Notice the new "subject" instruction ---
             prompt = f"""
             Scan the text and extract ALL multiple-choice questions you can find.
             For each question, provide:
@@ -60,7 +63,6 @@ if uploaded_file:
             except Exception as e:
                 st.error(f"Issue reading pages {start_page+1}-{end_page}: {e}")
             
-            # Update the loading bar
             progress = min(1.0, (i + chunk_size) / len(doc))
             progress_bar.progress(progress)
         
@@ -74,31 +76,34 @@ if uploaded_file:
         st.write(f"**Found in PDF:** {len(contracts_qs)} Contracts | {len(crim_law_qs)} Crim Law | {len(torts_qs)} Torts")
         
         # 3. Sample and Assemble
-        exam_questions = []
-        # Safely grab the requested amounts (or maximum available if the PDF had fewer than 33)
-        exam_questions.extend(random.sample(contracts_qs, min(33, len(contracts_qs))))
-        exam_questions.extend(random.sample(crim_law_qs, min(33, len(crim_law_qs))))
-        exam_questions.extend(random.sample(torts_qs, min(34, len(torts_qs))))
+        temp_exam = []
+        temp_exam.extend(random.sample(contracts_qs, min(33, len(contracts_qs))))
+        temp_exam.extend(random.sample(crim_law_qs, min(33, len(crim_law_qs))))
+        temp_exam.extend(random.sample(torts_qs, min(34, len(torts_qs))))
         
-        random.shuffle(exam_questions)
+        random.shuffle(temp_exam)
         
-        st.success(f"🎉 Exam ready! Generated {len(exam_questions)} randomized questions.")
+        # --- NEW: Save the finalized exam to the "Memory" ---
+        st.session_state.exam_questions = temp_exam
+
+# --- NEW: Display logic moved OUTSIDE the button block ---
+# This ensures it prints the exam as long as it exists in memory!
+if st.session_state.exam_questions:
+    st.success(f"🎉 Exam ready! Generated {len(st.session_state.exam_questions)} randomized questions.")
+    
+    for i, q in enumerate(st.session_state.exam_questions):
+        st.divider()
+        st.subheader(f"Question {i+1} ({q.get('subject')})") 
         
-        # --- DISPLAY LOGIC ---
-        for i, q in enumerate(exam_questions):
-            st.divider()
-            # We now display the subject the AI identified next to the question number
-            st.subheader(f"Question {i+1} ({q.get('subject')})") 
-            
-            if q.get('fact_pattern'):
-                st.markdown(f"_{q.get('fact_pattern')}_")
-            
-            st.markdown(f"**{q.get('question')}**")
-            
-            user_choice = st.radio("Select an answer:", q.get('options', []), key=f"radio_{i}", label_visibility="collapsed")
-            
-            if st.button(f"Check Answer {i+1}", key=f"btn_{i}"):
-                if user_choice == q.get('correct_answer'):
-                    st.success(f"✅ Correct! {q.get('correct_explanation')}")
-                else:
-                    st.error(f"❌ Incorrect. {q.get('wrong_explanations')}")
+        if q.get('fact_pattern'):
+            st.markdown(f"_{q.get('fact_pattern')}_")
+        
+        st.markdown(f"**{q.get('question')}**")
+        
+        user_choice = st.radio("Select an answer:", q.get('options', []), key=f"radio_{i}", label_visibility="collapsed")
+        
+        if st.button(f"Check Answer {i+1}", key=f"btn_{i}"):
+            if user_choice == q.get('correct_answer'):
+                st.success(f"✅ Correct! {q.get('correct_explanation')}")
+            else:
+                st.error(f"❌ Incorrect. {q.get('wrong_explanations')}")
