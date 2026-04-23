@@ -95,4 +95,28 @@ if uploaded_file:
 
         # Final Assembly
         random.shuffle(all_questions)
-        st.
+        st.session_state.exam_questions = all_questions[:100]
+        st.session_state.exam_submitted = False
+        st.rerun()
+
+# --- NEW UX: Process of Elimination Display Logic ---
+if st.session_state.exam_questions:
+    st.success(f"🎉 Exam ready! {len(st.session_state.exam_questions)} questions loaded.")
+    
+    for i, q in enumerate(st.session_state.exam_questions):
+        st.divider()
+        st.subheader(f"Q{i+1}: {q.get('subject')}")
+        st.write(q.get('fact_pattern', ''))
+        st.markdown(f"**{q.get('question', '')}**")
+        
+        # 1. The Elimination Checkboxes
+        st.caption("🛠️ *Process of Elimination:*")
+        cols = st.columns(4)
+        labels = ["A", "B", "C", "D"]
+        elim_flags = []
+        options_list = q.get('options', [])
+        
+        for j, col in enumerate(cols):
+            if j < len(options_list):
+                # Renders a tiny checkbox for each option
+                is_eliminated = col.checkbox(f"Cross out {labels[j]}", key=f"elim_{i}_{j}", disabled=st
