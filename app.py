@@ -2,7 +2,7 @@ import streamlit as st
 import fitz  # PyMuPDF
 from openai import OpenAI
 import json
-import random # Added to shuffle the questions
+import random 
 
 # Setup OpenAI Client using your secret key
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -33,7 +33,7 @@ if uploaded_file:
         sub2_count = st.number_input(f"{sub2_name} Q's", min_value=1, value=33, key="c2")
         
     with col3:
-        sub3_name = st.text_input("Subject 3", "Torts") # You can change this in the app!
+        sub3_name = st.text_input("Subject 3", "Torts") 
         sub3_pages = st.slider(f"{sub3_name} Pages", 1, len(doc), (21, min(30, len(doc))), key="s3")
         sub3_count = st.number_input(f"{sub3_name} Q's", min_value=1, value=34, key="c3")
         
@@ -46,13 +46,14 @@ if uploaded_file:
         # Function to handle the extraction for each subject
         def extract_questions(pages_tuple, count, subject):
             start, end = pages_tuple
-            # Grab only the text from the selected slider pages
             text = "".join([doc[i].get_text() for i in range(start - 1, end)])
             
+            # --- UPDATED PROMPT TO CATCH THE FACT PATTERN ---
             prompt = f"""
             Scan the text and extract EXACTLY {count} multiple-choice questions related to {subject}.
             For each question, provide:
-            - "question": The question stem
+            - "fact_pattern": The complete scenario or story leading up to the question.
+            - "question": The actual question stem (the final sentence being asked).
             - "options": List of exactly 4 strings for A, B, C, D
             - "correct_answer": The exact string of the correct option
             - "correct_explanation": A brief 1-sentence reason why it is correct
@@ -92,12 +93,22 @@ if uploaded_file:
         
         # Shuffle and Display
         if all_questions:
-            random.shuffle(all_questions) # This mixes Contracts, Crim Law, and Torts together
+            random.shuffle(all_questions) 
             st.success(f"✅ Successfully built an exam with {len(all_questions)} shuffled questions!")
             
+            # --- UPDATED DISPLAY LOGIC ---
             for i, q in enumerate(all_questions):
-                st.subheader(f"Q{i+1}: {q.get('question')}")
-                user_choice = st.radio("Select an answer:", q.get('options', []), key=f"radio_{i}")
+                st.divider() # Adds a nice line between questions
+                st.subheader(f"Question {i+1}")
+                
+                # Show the fact pattern first, in italics
+                if q.get('fact_pattern'):
+                    st.markdown(f"_{q.get('fact_pattern')}_")
+                
+                # Show the question stem in bold
+                st.markdown(f"**{q.get('question')}**")
+                
+                user_choice = st.radio("Select an answer:", q.get('options', []), key=f"radio_{i}", label_visibility="collapsed")
                 
                 if st.button(f"Check Answer {i+1}", key=f"btn_{i}"):
                     if user_choice == q.get('correct_answer'):
