@@ -8,48 +8,71 @@ import random
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("⚖️ Autonomous Bar Exam Builder")
-st.write("Upload your MBE PDF. The AI will scan the entire document, identify the subjects, and build your custom exam.")
+st.write("Upload your MBE PDF. The AI will extract questions and cross-reference them with the book's official answer key to build your exam.")
 
-# --- NEW: Initialize the App's "Memory" ---
+# --- Initialize the App's "Memory" ---
 if "exam_questions" not in st.session_state:
     st.session_state.exam_questions = None
+# --- NEW: Memory to track if the exam is finished ---
+if "exam_submitted" not in st.session_state:
+    st.session_state.exam_submitted = False
 
 uploaded_file = st.file_uploader("Upload your MBE PDF", type="pdf")
 
 if uploaded_file:
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-    st.write(f"**PDF loaded successfully!** Total pages: {len(doc)}")
+    
+    st.markdown("### Locate the Sections")
+    st.info("MBE books separate questions and answers. Use the sliders to tell the AI where to look so it can use the official explanations.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        q_start, q_end = st.slider("Pages with Questions", 1, len(doc), (1, min(30, len(doc))))
+    with col2:
+        a_start, a_end = st.slider("Pages with Answer Key", 1, len(doc), (min(31, len(doc)), min(60, len(doc))))
     
     if st.button("Scan PDF & Build Exam"):
-        st.warning("⏳ Scanning a large document takes time. The AI is reading the pages in chunks. This may take 2-3 minutes. Please do not refresh!")
+        st.warning("⏳ Scanning questions and cross-referencing the answer key... This takes time. Please do not refresh!")
         
         progress_bar = st.progress(0)
         status_text = st.empty()
         
+        # 1. Memorize the Answer Key
+        status_text.text("📖 Memorizing the official Answer Key...")
+        answer_key_text = "".join([doc[i].get_text() for i in range(a_start - 1, a_end)])
+        
         all_questions = []
         chunk_size = 15 
         
-        # 1. The Auto-Scanner Loop
-        for i in range(0, len(doc), chunk_size):
-            start_page = i
-            end_page = min(i + chunk_size, len(doc))
-            status_text.text(f"Scanning pages {start_page + 1} to {end_page}...")
+        # 2. The Auto-Scanner Loop 
+        for i in range(q_start - 1, q_end, chunk_size):
+            chunk_end = min(i + chunk_size, q_end)
+            status_text.text(f"Scanning Question pages {i + 1} to {chunk_end}...")
             
-            text = "".join([doc[page_num].get_text() for page_num in range(start_page, end_page)])
+            question_text = "".join([doc[page_num].get_text() for page_num in range(i, chunk_end)])
             
             prompt = f"""
-            Scan the text and extract ALL multiple-choice questions you can find.
+            You are an expert legal AI.
+            
+            Task 1: Scan the TEXT CHUNK below and extract ALL multiple-choice questions you can find.
+            Task 2: For every question you extract, search the ANSWER KEY TEXT below to find the book's official explanation. 
+            
             For each question, provide:
             - "subject": Categorize the question strictly as 'Contracts', 'Criminal Law', 'Torts', or 'Other'.
             - "fact_pattern": The complete scenario or story leading up to the question.
             - "question": The actual question stem (the final sentence being asked).
             - "options": List of exactly 4 strings for A, B, C, D
             - "correct_answer": The exact string of the correct option
-            - "correct_explanation": A brief 1-sentence reason why it is correct
-            - "wrong_explanations": A brief 1-sentence reason why the others are wrong
+            - "correct_explanation": The exact reason why it is correct, sourced STRICTLY from the ANSWER KEY TEXT.
+            - "wrong_explanations": The exact reason why the others are wrong, sourced STRICTLY from the ANSWER KEY TEXT.
             
             Return ONLY a JSON object with a key 'questions' containing the list.
-            Text: {text}
+            
+            TEXT CHUNK (Questions to extract): 
+            {question_text}
+            
+            ANSWER KEY TEXT (Use this to find the exact explanations):
+            {answer_key_text}
             """
             
             try:
@@ -61,21 +84,20 @@ if uploaded_file:
                 extracted = json.loads(response.choices[0].message.content).get('questions', [])
                 all_questions.extend(extracted)
             except Exception as e:
-                st.error(f"Issue reading pages {start_page+1}-{end_page}: {e}")
+                st.error(f"Issue reading pages {i+1}-{chunk_end}: {e}")
             
-            progress = min(1.0, (i + chunk_size) / len(doc))
-            progress_bar.progress(progress)
+            total_pages_to_scan = q_end - q_start + 1
+            pages_scanned = chunk_end - q_start + 1
+            progress_bar.progress(min(1.0, pages_scanned / total_pages_to_scan))
         
         status_text.text("✅ Scanning complete! Assembling your exam...")
         
-        # 2. The Sorting Buckets
+        # 3. The Sorting Buckets
         contracts_qs = [q for q in all_questions if q.get('subject') == 'Contracts']
         crim_law_qs = [q for q in all_questions if q.get('subject') == 'Criminal Law']
         torts_qs = [q for q in all_questions if q.get('subject') == 'Torts']
         
-        st.write(f"**Found in PDF:** {len(contracts_qs)} Contracts | {len(crim_law_qs)} Crim Law | {len(torts_qs)} Torts")
-        
-        # 3. Sample and Assemble
+        # 4. Sample and Assemble
         temp_exam = []
         temp_exam.extend(random.sample(contracts_qs, min(33, len(contracts_qs))))
         temp_exam.extend(random.sample(crim_law_qs, min(33, len(crim_law_qs))))
@@ -83,13 +105,17 @@ if uploaded_file:
         
         random.shuffle(temp_exam)
         
-        # --- NEW: Save the finalized exam to the "Memory" ---
+        # Save the finalized exam and RESET the submission status
         st.session_state.exam_questions = temp_exam
+        st.session_state.exam_submitted = False
+        st.rerun()
 
-# --- NEW: Display logic moved OUTSIDE the button block ---
-# This ensures it prints the exam as long as it exists in memory!
+# --- Display logic outside the button block ---
 if st.session_state.exam_questions:
-    st.success(f"🎉 Exam ready! Generated {len(st.session_state.exam_questions)} randomized questions.")
+    if not st.session_state.exam_submitted:
+        st.success(f"🎉 Exam ready! You have {len(st.session_state.exam_questions)} questions to complete.")
+    else:
+        st.info("📊 Exam Submitted! Review your answers below.")
     
     for i, q in enumerate(st.session_state.exam_questions):
         st.divider()
@@ -100,10 +126,33 @@ if st.session_state.exam_questions:
         
         st.markdown(f"**{q.get('question')}**")
         
-        user_choice = st.radio("Select an answer:", q.get('options', []), key=f"radio_{i}", label_visibility="collapsed")
+        # Disable the radio buttons if the exam is already submitted
+        user_choice = st.radio(
+            "Select an answer:", 
+            q.get('options', []), 
+            key=f"radio_{i}", 
+            label_visibility="collapsed",
+            disabled=st.session_state.exam_submitted
+        )
         
-        if st.button(f"Check Answer {i+1}", key=f"btn_{i}"):
+        # --- NEW: Only show the feedback IF the exam is submitted ---
+        if st.session_state.exam_submitted:
             if user_choice == q.get('correct_answer'):
                 st.success(f"✅ Correct! {q.get('correct_explanation')}")
             else:
-                st.error(f"❌ Incorrect. {q.get('wrong_explanations')}")
+                st.error(f"❌ Incorrect. You chose: {user_choice}")
+                st.success(f"✅ Correct Answer: {q.get('correct_answer')}")
+                st.warning(f"**Explanation:** {q.get('wrong_explanations')}")
+
+    # --- NEW: The Master Submit Button at the bottom ---
+    st.divider()
+    if not st.session_state.exam_submitted:
+        # A large, primary-colored button to submit the whole test
+        if st.button("Submit Exam & View Explanations", type="primary"):
+            st.session_state.exam_submitted = True
+            st.rerun()
+    else:
+        # Give them an option to clear their answers and try again
+        if st.button("Retake This Exam"):
+            st.session_state.exam_submitted = False
+            st.rerun()
