@@ -119,4 +119,31 @@ if st.session_state.exam_questions:
         for j, col in enumerate(cols):
             if j < len(options_list):
                 # Renders a tiny checkbox for each option
-                is_eliminated = col.checkbox(f"Cross out {labels[j]}", key=f"elim_{i}_{j}", disabled=st
+                is_eliminated = col.checkbox(f"Cross out {labels[j]}", key=f"elim_{i}_{j}", disabled=st.session_state.exam_submitted)
+                elim_flags.append(is_eliminated)
+        
+        # 2. Re-building the Answer Choices
+        display_map = {}
+        for j, opt in enumerate(options_list):
+            if j < len(elim_flags) and elim_flags[j]:
+                # If checked, add the Markdown strikethrough code
+                display_map[f"~~{opt}~~"] = opt
+            else:
+                display_map[opt] = opt
+        
+        # 3. The Radio Button (Displays the Strikethrough, Remembers the clean text)
+        choice_display = st.radio("Answer:", list(display_map.keys()), key=f"r_{i}", label_visibility="collapsed", disabled=st.session_state.exam_submitted)
+        choice = display_map[choice_display] if choice_display else None
+        
+        # 4. Grading logic (Unchanged!)
+        if st.session_state.exam_submitted:
+            if choice == q.get('correct_answer'):
+                st.success(f"✅ Correct! {q.get('correct_explanation','')}")
+            else:
+                st.error(f"❌ Incorrect. Correct: {q.get('correct_answer')}")
+                st.warning(f"Explanations: {q.get('wrong_explanations','')}")
+
+    if not st.session_state.exam_submitted:
+        if st.button("Submit Exam", type="primary"):
+            st.session_state.exam_submitted = True
+            st.rerun()
