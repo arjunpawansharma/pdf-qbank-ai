@@ -85,9 +85,9 @@ a_start, a_end = st.slider("Pages with Answer Key", 1, len(doc), st.session_stat
 q_start = 1
 q_end = a_start - 1
     
-   st.markdown("### 2. Build the Exam")
-    if st.button("Scan PDF & Build Exam", type="primary"):
-        st.warning("⏳ Scanning questions and cross-referencing the answer key... This takes time. Please do not refresh!")
+st.markdown("### 2. Build the Exam")
+if st.button("Scan PDF & Build Exam", type="primary"):
+    st.warning("⏳ Scanning questions and cross-referencing the answer key... This takes time. Please do not refresh!")
         
         progress_bar = st.progress(0)
         status_text = st.empty()
