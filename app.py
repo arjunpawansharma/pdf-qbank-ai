@@ -93,7 +93,7 @@ if uploaded_file:
         answer_key_text = "".join([doc[i].get_text() for i in range(a_start - 1, a_end)])
         
         all_questions = []
-        chunk_size = 15 
+        chunk_size = 3 
         
         for i in range(q_start - 1, q_end, chunk_size):
             chunk_end = min(i + chunk_size, q_end)
