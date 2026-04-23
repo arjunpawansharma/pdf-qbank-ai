@@ -73,14 +73,17 @@ if uploaded_file:
                     st.error(f"Auto-detect failed: {e}")
     
     # Show the sliders (pre-filled with AI's guess if auto-detected)
-    if st.session_state.layout_detected:
-        st.success("✅ Layout detected! You can fine-tune the AI's guess below if needed.")
-        
-    col1, col2 = st.columns(2)
-    with col1:
-        q_start, q_end = st.slider("Pages with Questions", 1, len(doc), st.session_state.q_range)
-    with col2:
-        a_start, a_end = st.slider("Pages with Answer Key", 1, len(doc), st.session_state.a_range)
+if st.session_state.layout_detected:
+    st.success("✅ Layout detected! You can fine-tune the AI's guess below if needed.")
+    
+st.info("The AI will automatically scan the entire book for questions. Just confirm where the Answer Key is located!")
+
+# We only need the Answer Key slider now
+a_start, a_end = st.slider("Pages with Answer Key", 1, len(doc), st.session_state.a_range)
+
+# Force the app to scan the entire PDF for questions, stopping right before the answers start
+q_start = 1
+q_end = a_start - 1
     
     st.markdown("### 2. Build the Exam")
     if st.button("Scan PDF & Build Exam", type="primary"):
